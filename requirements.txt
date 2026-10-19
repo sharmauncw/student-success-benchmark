@@ -1,0 +1,10 @@
+# Direct dependencies (pinned from a working install, Python 3.12)
+streamlit==1.66.0
+pandas==3.0.6
+plotly==7.1.0
+matplotlib==3.11.2
+numpy==2.5.4
+# Optional: only needed to regenerate dashboard screenshots headlessly
+playwright==1.64.0
+# Optional: only needed to export Plotly figures as static images
+kaleido==1.5.0
