@@ -1,0 +1,125 @@
+// ============================================================
+//  Student Success & Value Benchmark — DAX measures
+//  Paste these into Power BI Desktop (Modeling > New measure).
+//
+//  Expected model (see model/star-schema.png):
+//    fact_student_outcomes[cohort_year, residency_key, student_type_key,
+//        pell_key, race_key, cohort_n, retained_1yr_n,
+//        grad_4yr_n, grad_6yr_n, avg_debt_usd]
+//    peer_benchmark[cohort_year, benchmark_retention, benchmark_grad_4yr,
+//        benchmark_grad_6yr, benchmark_debt]
+//  Relationships: single-direction, one-to-many from each dimension
+//  table to fact_student_outcomes on its key; peer_benchmark joins
+//  to the fact on cohort_year (many-to-one, single direction).
+//
+//  Blank handling: grad_4yr_n is blank for cohorts 2022+ and
+//  grad_6yr_n is blank for cohorts 2020+ (not yet observable), so
+//  the graduation measures only aggregate observable cohorts.
+// ============================================================
+
+
+// --- base -----------------------------------------------------
+Cohort Size =
+SUM ( fact_student_outcomes[cohort_n] )
+
+
+// --- first-year retention -------------------------------------
+Retention Rate =
+DIVIDE (
+    SUM ( fact_student_outcomes[retained_1yr_n] ),
+    [Cohort Size]
+)
+
+Retention Rate YoY (pp) =
+// No date table needed: cohort_year is an integer, so the prior year is
+// picked up with a filter instead of PREVIOUSYEAR (which requires a
+// proper date column and would error here).
+VAR _this_year = MAX ( dim_cohort[cohort_year] )
+VAR _curr = [Retention Rate]
+VAR _prev =
+    CALCULATE (
+        [Retention Rate],
+        REMOVEFILTERS ( dim_cohort ),
+        dim_cohort[cohort_year] = _this_year - 1
+    )
+RETURN
+    ( _curr - _prev ) * 100
+
+Benchmark Retention Rate =
+AVERAGE ( peer_benchmark[benchmark_retention] ) / 100
+
+Retention vs Benchmark (pp) =
+( [Retention Rate] - [Benchmark Retention Rate] ) * 100
+
+
+// --- four-year graduation -------------------------------------
+4-Yr Graduation Rate =
+VAR _grads =
+    CALCULATE (
+        SUM ( fact_student_outcomes[grad_4yr_n] ),
+        NOT ISBLANK ( fact_student_outcomes[grad_4yr_n] )
+    )
+VAR _cohorts =
+    CALCULATE (
+        [Cohort Size],
+        NOT ISBLANK ( fact_student_outcomes[grad_4yr_n] )
+    )
+RETURN
+    DIVIDE ( _grads, _cohorts )
+
+Benchmark 4-Yr Graduation Rate =
+VAR _b =
+    CALCULATE (
+        AVERAGE ( peer_benchmark[benchmark_grad_4yr] ),
+        NOT ISBLANK ( peer_benchmark[benchmark_grad_4yr] )
+    )
+RETURN
+    _b / 100
+
+4-Yr Graduation vs Benchmark (pp) =
+( [4-Yr Graduation Rate] - [Benchmark 4-Yr Graduation Rate] ) * 100
+
+
+// --- six-year graduation --------------------------------------
+6-Yr Graduation Rate =
+VAR _grads =
+    CALCULATE (
+        SUM ( fact_student_outcomes[grad_6yr_n] ),
+        NOT ISBLANK ( fact_student_outcomes[grad_6yr_n] )
+    )
+VAR _cohorts =
+    CALCULATE (
+        [Cohort Size],
+        NOT ISBLANK ( fact_student_outcomes[grad_6yr_n] )
+    )
+RETURN
+    DIVIDE ( _grads, _cohorts )
+
+Benchmark 6-Yr Graduation Rate =
+VAR _b =
+    CALCULATE (
+        AVERAGE ( peer_benchmark[benchmark_grad_6yr] ),
+        NOT ISBLANK ( peer_benchmark[benchmark_grad_6yr] )
+    )
+RETURN
+    _b / 100
+
+6-Yr Graduation vs Benchmark (pp) =
+( [6-Yr Graduation Rate] - [Benchmark 6-Yr Graduation Rate] ) * 100
+
+
+// --- average debt (headcount-weighted) ------------------------
+Avg Debt =
+DIVIDE (
+    SUMX (
+        fact_student_outcomes,
+        fact_student_outcomes[cohort_n] * fact_student_outcomes[avg_debt_usd]
+    ),
+    [Cohort Size]
+)
+
+Benchmark Avg Debt =
+AVERAGE ( peer_benchmark[benchmark_debt] )
+
+Debt vs Benchmark ($) =
+[Benchmark Avg Debt] - [Avg Debt]   // positive = demo is cheaper
